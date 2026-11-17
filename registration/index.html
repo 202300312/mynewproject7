@@ -1,0 +1,66 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+*{box-sizing:border-box}html,body{margin:0;background:transparent;color:#173525;font:15px system-ui,'Malgun Gothic',sans-serif}
+form{padding:3px 4px 8px;display:grid;gap:14px}.field{display:grid;gap:5px}label{font-weight:700;font-size:14px}
+.control{display:grid;grid-template-columns:minmax(0,1fr) minmax(140px,auto);align-items:center;gap:12px}
+input{font:inherit;padding:12px 13px;border:1px solid #abcab5;border-radius:9px;width:100%;background:#fff;color:#152d20}
+input:focus{outline:2px solid #60ac7b;outline-offset:1px}
+.feedback{font-size:13px;font-weight:700;min-width:140px;min-height:18px}.bad{color:#b42330}.good{color:#127647}.muted{color:#64756b}
+button{border:0;background:#178260;color:white;border-radius:10px;padding:13px 18px;font:inherit;font-weight:800;cursor:pointer}
+button:disabled{background:#9ab5a5;cursor:not-allowed}.notice{font-size:13px;font-weight:700;min-height:20px}
+@media(max-width:580px){.control{grid-template-columns:1fr}.feedback{min-height:0}}
+</style></head><body>
+<form id="register" autocomplete="on">
+<div class="field"><label for="name">이름</label><div class="control"><input id="name" autocomplete="name" maxlength="40" required><span></span></div></div>
+<div class="field"><label for="sid">아이디(학번)</label><div class="control"><input id="sid" inputmode="numeric" autocomplete="username" pattern="[0-9]{4,15}" maxlength="15" required placeholder="숫자 4~15자리"><span class="feedback muted" id="sidFeedback" role="status" aria-live="polite"></span></div></div>
+<div class="field"><label for="password">비밀번호 (8자 이상)</label><div class="control"><input id="password" type="password" autocomplete="new-password" minlength="8" required><span></span></div></div>
+<div class="field"><label for="confirm">비밀번호 확인</label><div class="control"><input id="confirm" type="password" autocomplete="new-password" required><span class="feedback muted" id="matchFeedback" role="status" aria-live="polite"></span></div></div>
+<button type="submit" id="submit">신규등록</button><div class="notice" id="notice" role="status" aria-live="polite"></div>
+</form>
+<script>
+let timer=null,seq=0,latestCheck=0,known={id:'',exists:null},registered=false;
+const $=id=>document.getElementById(id);
+const send=(event)=>window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:setComponentValue',value:{...event,token:++seq},dataType:'json'},'*');
+window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:componentReady',apiVersion:1},'*');
+window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:setFrameHeight',height:400},'*');
+function mark(node,message,css){node.className='feedback '+css;node.textContent=message;}
+function validId(){return /^[0-9]{4,15}$/.test($('sid').value.trim())}
+$('sid').addEventListener('input',()=>{
+  const value=$('sid').value.trim();known={id:'',exists:null};clearTimeout(timer);
+  if(!value){mark($('sidFeedback'),'','muted');return;}
+  if(!validId()){mark($('sidFeedback'),'학번은 숫자 4~15자리','bad');return;}
+  mark($('sidFeedback'),'확인 중…','muted');
+  timer=setTimeout(()=>{latestCheck=seq+1;send({type:'check_id',userid:value})},280);
+});
+function match(){
+ const a=$('password').value,b=$('confirm').value;
+ if(!b){mark($('matchFeedback'),'','muted');return false;}
+ if(a===b){mark($('matchFeedback'),'✓ 비밀번호 일치','good');return true;}
+ mark($('matchFeedback'),'✕ 비밀번호 불일치','bad');return false;
+}
+$('password').addEventListener('input',match);$('confirm').addEventListener('input',match);
+$('register').addEventListener('submit',e=>{
+ e.preventDefault();
+ if(!validId()){mark($('sidFeedback'),'학번은 숫자 4~15자리','bad');return;}
+ if(known.id!==$('sid').value.trim()||known.exists===null){$('notice').textContent='학번 중복 확인을 마친 후 등록해 주세요.';return;}
+ if(known.exists){$('notice').textContent='이미 등록된 아이디입니다.';return;}
+ if($('password').value.length<8||!match()){$('notice').textContent='비밀번호를 확인하세요.';return;}
+ $('submit').disabled=true;$('notice').textContent='등록 처리 중…';
+ send({type:'register',name:$('name').value,userid:$('sid').value,password:$('password').value,confirm:$('confirm').value});
+});
+window.addEventListener('message',event=>{
+ if(event.data?.type!=='streamlit:render')return;
+ const feedback=event.data.args?.feedback||{};
+ if(feedback.type==='check_id'&&feedback.userid===$('sid').value.trim()){
+    known={id:feedback.userid,exists:feedback.exists};
+    if(feedback.exists===true)mark($('sidFeedback'),'✕ 이미 등록된 아이디','bad');
+    else if(feedback.exists===false)mark($('sidFeedback'),'','muted');
+ }
+ if(feedback.type==='register'&&feedback.userid===$('sid').value.trim()){
+    $('submit').disabled=false;
+    $('notice').textContent=feedback.message||'';
+    $('notice').style.color=feedback.ok?'#127647':'#b42330';
+    if(feedback.ok){$('password').value='';$('confirm').value='';mark($('matchFeedback'),'','muted');known={id:'',exists:null};}
+    else if((feedback.message||'').includes('이미 등록')){known={id:feedback.userid,exists:true};mark($('sidFeedback'),'✕ 이미 등록된 아이디','bad')}
+ }
+});
+</script></body></html>
